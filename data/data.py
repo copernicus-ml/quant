@@ -77,6 +77,21 @@ class DataStore:
                 logger.info(f"{i + 1} stock files downloaded")
         logger.info("stock download completed")
 
+    def download_features(self):
+        stock_list_df = self.get_stock_list()
+        stocks = stock_list_df["ts_code"].to_list()
+        for i, stock in enumerate(stocks):
+            remote_file = f"{self._r2_features_path}/{stock}.parquet"
+            local_path = f"{self._local_features_path}/{stock}.parquet"
+            with (
+                self.fs.open_input_file(remote_file) as source,
+                open(local_path, "wb") as target,
+            ):
+                shutil.copyfileobj(source, target)
+            if (i + 1) % 10 == 0:
+                logger.info(f"{i + 1} features files downloaded")
+        logger.info("features download completed")
+
     def load_single_stock(
         self, ts_code: str, filters: list[tuple] | None = None
     ) -> pd.DataFrame:

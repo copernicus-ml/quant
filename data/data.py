@@ -59,6 +59,7 @@ class DataStore:
         self._local_stock_list_path = f"./{self._r2_stock_list_path}"
         self._local_stocks_path = f"./{self._r2_stocks_path}"
         self._local_features_path = f"./{self._r2_features_path}"
+        self._local_labels_path = f"./{self.bucket_name}/labels.csv"
 
     def get_stock_list(self) -> pd.DataFrame:
         stock_list_path = Path(self._local_stock_list_path)
@@ -143,17 +144,29 @@ class DataStore:
     #     return df
 
     def load_stocks(self) -> pd.DataFrame:
+        """
+        should not include index when loading stocks, because we might need to
+        set different level of index in feature-building and label generation
+        """
         dataset = pq.ParquetDataset(self._local_stocks_path)
         table = dataset.read()
         df = table.to_pandas()
-        df.set_index(["ts_code", "trade_date"], inplace=True)
+        df = df.sort_values(["ts_code", "trade_date"])
         return df
 
     def load_features(self) -> pd.DataFrame:
+        """
+        should not include index when loading features, because we might need to
+        set different level of index in feature-building and label generation
+        """
         dataset = pq.ParquetDataset(self._local_features_path)
         table = dataset.read()
         df = table.to_pandas()
         return df
+
+    def save_labels(self, df: pd.DataFrame):
+        Path(self._local_labels_path).parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(self._local_labels_path, index=False)
 
     def _ensure_local_dirs(self):
         for folder in [INDEX_DIR, STOCK_DIR, META_DIR, FEATURE_DIR]:

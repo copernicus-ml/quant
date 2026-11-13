@@ -24,9 +24,11 @@ FEATURE_META_COLLECTION = {
     "trade_date": FeatureMeta(categorical=True),
     "industry": FeatureMeta(categorical=True),
     "turnover": FeatureMeta(winsorize=True, neutralize=True),
-    "pb": FeatureMeta(winsorize=True, neutralize=True),
-    "pe": FeatureMeta(winsorize=True, neutralize=True),
-    "roe": FeatureMeta(winsorize=True, neutralize=True),
+    # at this time we exclude these three features, becasue the last-day
+    # data doesn't have these three fields (NA value)
+    # "pb": FeatureMeta(winsorize=True, neutralize=True),
+    # "pe": FeatureMeta(winsorize=True, neutralize=True),
+    # "roe": FeatureMeta(winsorize=True, neutralize=True),
     # ./calculator_utils/compute_price_momentum
     "ma_5_bias": FeatureMeta(winsorize=True, neutralize=True),
     "return_5d": FeatureMeta(winsorize=True, neutralize=True),

@@ -1,3 +1,3 @@
-from .data import DataStore
+from .data import DataStore, DownloadType
 
-__all__ = ["DataStore"]
+__all__ = ["DataStore", "DownloadType"]

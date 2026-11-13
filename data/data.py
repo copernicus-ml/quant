@@ -1,10 +1,12 @@
 import logging
 import os
 import shutil
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from enum import Enum
 from pathlib import Path
 
 import pandas as pd
-import pyarrow as pa
 import pyarrow.parquet as pq
 from pyarrow import fs
 
@@ -16,9 +18,15 @@ META_DIR = "meta"
 FEATURE_DIR = "feature"
 
 STOCK_LIST_FILENAME_PREFIX = "stock_list"
-LOCAL_DATA_FOLDER = "data"
+
+MAX_WORKERS = 8
 
 logger = logging.getLogger(__name__)
+
+
+class DownloadType(str, Enum):
+    stocks = "stock"
+    features = "features"
 
 
 class DataStore:
@@ -35,9 +43,11 @@ class DataStore:
         )
         self.bucket_name = config.bucket_name
         self.stock_list_filename = STOCK_LIST_FILENAME_PREFIX
-        if config.runtime_env == "dev":
-            self.bucket_name = f"{self.bucket_name}-dev"
-            self.stock_list_filename = f"{self.stock_list_filename}_dev"
+        if config.runtime_env not in ["dev", "prod"]:
+            logger.error('invalid runtime evn, should be "dev" or "prod"')
+            raise OSError("invalid runtime env")
+        self.bucket_name = f"{self.bucket_name}-{config.runtime_env}"
+        self.stock_list_filename = f"{self.stock_list_filename}"
 
         # Setup local path
         self._ensure_local_dirs()
@@ -46,9 +56,9 @@ class DataStore:
         )
         self._r2_stocks_path = f"{self.bucket_name}/{STOCK_DIR}"
         self._r2_features_path = f"{self.bucket_name}/{FEATURE_DIR}"
-        self._local_stock_list_path = f"{LOCAL_DATA_FOLDER}/{self._r2_stock_list_path}"
-        self._local_stocks_path = f"{LOCAL_DATA_FOLDER}/{self._r2_stocks_path}"
-        self._local_features_path = f"{LOCAL_DATA_FOLDER}/{self._r2_features_path}"
+        self._local_stock_list_path = f"./{self._r2_stock_list_path}"
+        self._local_stocks_path = f"./{self._r2_stocks_path}"
+        self._local_features_path = f"./{self._r2_features_path}"
 
     def get_stock_list(self) -> pd.DataFrame:
         stock_list_path = Path(self._local_stock_list_path)
@@ -62,92 +72,89 @@ class DataStore:
         df = pd.read_csv(stock_list_path)
         return df
 
-    def download_stocks(self):
+    def download_data(self, type: DownloadType = DownloadType.stocks):
         stock_list_df = self.get_stock_list()
         stocks = stock_list_df["ts_code"].to_list()
-        for i, stock in enumerate(stocks):
-            remote_file = f"{self._r2_stocks_path}/{stock}.parquet"
-            local_path = f"{self._local_stocks_path}/{stock}.parquet"
-            with (
-                self.fs.open_input_file(remote_file) as source,
-                open(local_path, "wb") as target,
-            ):
-                shutil.copyfileobj(source, target)
-            if (i + 1) % 10 == 0:
-                logger.info(f"{i + 1} stock files downloaded")
-        logger.info("stock download completed")
+        # concurrent download data
+        completed = 0
+        counter_lock = threading.Lock()
+        download_fn = (
+            self._download_stock
+            if type == DownloadType.stocks
+            else self._download_feature
+        )
+        with ThreadPoolExecutor(
+            max_workers=MAX_WORKERS, thread_name_prefix="download_stock"
+        ) as executor:
+            futures = {
+                executor.submit(download_fn, ticker): ticker for ticker in stocks
+            }
+            for future in as_completed(futures):
+                ticker = futures[future]
+                try:
+                    future.result()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        f"failed to download {type} data for {ticker}: {exc!s}"
+                    )
+                finally:
+                    with counter_lock:
+                        completed += 1
+                        if completed % 10 == 0 or completed == len(stocks):
+                            logger.info(
+                                f"{completed}/{len(stocks)} {type} task completed"
+                            )
+        logger.info(f"{type} download completed")
 
-    def download_features(self):
-        stock_list_df = self.get_stock_list()
-        stocks = stock_list_df["ts_code"].to_list()
-        for i, stock in enumerate(stocks):
-            remote_file = f"{self._r2_features_path}/{stock}.parquet"
-            local_path = f"{self._local_features_path}/{stock}.parquet"
-            with (
-                self.fs.open_input_file(remote_file) as source,
-                open(local_path, "wb") as target,
-            ):
-                shutil.copyfileobj(source, target)
-            if (i + 1) % 10 == 0:
-                logger.info(f"{i + 1} features files downloaded")
-        logger.info("features download completed")
+    def _download_stock(self, ticker: str):
+        remote_file = f"{self._r2_stocks_path}/{ticker}.parquet"
+        local_path = f"{self._local_stocks_path}/{ticker}.parquet"
+        with (
+            self.fs.open_input_file(remote_file) as source,
+            open(local_path, "wb") as target,
+        ):
+            shutil.copyfileobj(source, target)
 
-    def load_single_stock(
-        self, ts_code: str, filters: list[tuple] | None = None
-    ) -> pd.DataFrame:
-        stock_path = f"{self._local_stocks_path}/{ts_code}.parquet"
-        table = pq.read_table(stock_path, filters=filters)
-        df = table.to_pandas()
-        df = df.set_index("trade_date")
-        return df
+    def _download_feature(self, ticker: str):
+        remote_file = f"{self._r2_features_path}/{ticker}.parquet"
+        local_path = f"{self._local_features_path}/{ticker}.parquet"
+        with (
+            self.fs.open_input_file(remote_file) as source,
+            open(local_path, "wb") as target,
+        ):
+            shutil.copyfileobj(source, target)
 
-    def load_single_feature(
-        self, ts_code: str, filters: list[tuple] | None = None
-    ) -> pd.DataFrame:
-        stock_path = f"{self._local_features_path}/{ts_code}.parquet"
-        table = pq.read_table(stock_path, filters=filters)
-        df = table.to_pandas()
-        df = df.set_index("trade_date")
-        return df
+    # def load_single_stock(
+    #     self, ts_code: str, filters: list[tuple] | None = None
+    # ) -> pd.DataFrame:
+    #     stock_path = f"{self._local_stocks_path}/{ts_code}.parquet"
+    #     table = pq.read_table(stock_path, filters=filters)
+    #     df = table.to_pandas()
+    #     df = df.set_index("trade_date")
+    #     return df
 
-    def load_stocks(self, filters: list[tuple] | None = None) -> pd.DataFrame:
-        if filters:
-            dataset = pq.ParquetDataset(self._local_stocks_path, filters=filters)
-        else:
-            dataset = pq.ParquetDataset(self._local_stocks_path)
+    # def load_single_feature(
+    #     self, ts_code: str, filters: list[tuple] | None = None
+    # ) -> pd.DataFrame:
+    #     stock_path = f"{self._local_features_path}/{ts_code}.parquet"
+    #     table = pq.read_table(stock_path, filters=filters)
+    #     df = table.to_pandas()
+    #     df = df.set_index("trade_date")
+    #     return df
+
+    def load_stocks(self) -> pd.DataFrame:
+        dataset = pq.ParquetDataset(self._local_stocks_path)
         table = dataset.read()
         df = table.to_pandas()
         df.set_index(["ts_code", "trade_date"], inplace=True)
         return df
 
-    def save_single_feature(
-        self, ts_code: str, feature_df: pd.DataFrame, save_csv: bool = False
-    ) -> None:
-        df = feature_df.copy()
-        df = df.reset_index()
-        if save_csv:
-            df.to_csv(f"{self._local_features_path}/{ts_code}.csv", index=False)
-        else:
-            table = pa.Table.from_pandas(df, preserve_index=False)
-            pq.write_table(
-                table,
-                f"{self._local_features_path}/{ts_code}.parquet",
-                compression="zstd",
-                compression_level=3,
-            )
-
-    def save_all_features(self, combined_df: pd.DataFrame) -> None:
-        for ts_code, stock_df in combined_df.groupby(level="ts_code", sort=False):
-            table = pa.Table.from_pandas(stock_df.reset_index())
-            pq.write_table(
-                table,
-                f"{self._local_features_path}/{ts_code}.parquet",
-                compression="zstd",
-                compression_level=3,
-            )
+    def load_features(self) -> pd.DataFrame:
+        dataset = pq.ParquetDataset(self._local_features_path)
+        table = dataset.read()
+        df = table.to_pandas()
+        return df
 
     def _ensure_local_dirs(self):
         for folder in [INDEX_DIR, STOCK_DIR, META_DIR, FEATURE_DIR]:
-            os.makedirs(
-                f"{LOCAL_DATA_FOLDER}/{self.bucket_name}/{folder}", exist_ok=True
-            )
+            os.makedirs(f"./{self.bucket_name}/{folder}", exist_ok=True)

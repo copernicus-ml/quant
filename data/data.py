@@ -47,7 +47,7 @@ class DataStore:
             logger.error('invalid runtime evn, should be "dev" or "prod"')
             raise OSError("invalid runtime env")
         self.bucket_name = f"{self.bucket_name}-{config.runtime_env}"
-        self.stock_list_filename = f"{self.stock_list_filename}_dev"
+        self.stock_list_filename = f"{self.stock_list_filename}"
 
         # Setup local path
         self._ensure_local_dirs()

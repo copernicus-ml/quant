@@ -2,6 +2,8 @@ from typing import cast
 
 import pandas as pd
 
+LABEL_COL_NAME = "label"
+
 future_return_col = "future_return"
 rank_group_keys = ["trade_date"]
 
@@ -25,11 +27,10 @@ class LabelGenerator:
         labels = df.groupby(rank_group_keys)[future_return_col].rank(pct=True)
         return cast(pd.Series, labels)
 
-    def generate_labels(
-        self, df: pd.DataFrame, label_col: str = "label"
-    ) -> pd.DataFrame:
+    def generate_labels(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df[["ts_code", "trade_date", "adj_open", "adj_close"]].copy()  # pyright: ignore[reportAssignmentType]
         df = df.sort_values(["ts_code", "trade_date"])
         df[future_return_col] = self.calculate_future_return(df)
-        df[label_col] = self.assign_rank_pct_labels(df)
+        df[LABEL_COL_NAME] = self.assign_rank_pct_labels(df)
+        df = df.drop(columns=["adj_open", "adj_close", future_return_col])
         return df

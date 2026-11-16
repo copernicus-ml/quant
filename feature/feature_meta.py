@@ -91,6 +91,8 @@ FEATURE_META_COLLECTION = {
     "bb_position": FeatureMeta(winsorize=True, neutralize=True),
     # ./calculator_utils/compute_kdj
     "kdj_k": FeatureMeta(winsorize=True, neutralize=True),
+    "kdj_d": FeatureMeta(winsorize=True, neutralize=True),
+    "kdj_j": FeatureMeta(winsorize=True, neutralize=True),
     # ./calculator_utils/compute_rsi
     "rsi_6": FeatureMeta(winsorize=True, neutralize=True),
     "rsi_14": FeatureMeta(winsorize=True, neutralize=True),

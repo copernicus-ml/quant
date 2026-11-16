@@ -7,3 +7,7 @@ import pandas as pd
 class FeatureBuilder:
     def __init__(self, feature_df: pd.DataFrame, columns: list[str]):
         self.feature_df = feature_df[[*columns]]
+
+    def get_feature_df(self):
+        feature_df = self.feature_df.drop(columns=["industry"])
+        return feature_df

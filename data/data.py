@@ -51,9 +51,7 @@ class DataStore:
 
         # Setup local path
         self._ensure_local_dirs()
-        self._r2_stock_list_path = (
-            f"{self.bucket_name}/{META_DIR}/{self.stock_list_filename}.csv"
-        )
+        self._r2_stock_list_path = f"{self.bucket_name}/{META_DIR}/{self.stock_list_filename}_{config.runtime_env}.csv"
         self._r2_stocks_path = f"{self.bucket_name}/{STOCK_DIR}"
         self._r2_features_path = f"{self.bucket_name}/{FEATURE_DIR}"
         self._local_stock_list_path = f"./{self._r2_stock_list_path}"

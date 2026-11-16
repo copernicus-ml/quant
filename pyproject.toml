@@ -12,6 +12,7 @@ dependencies = [
     "pyarrow>=25.0.1",
     "pydantic>=2.13.5",
     "pyyaml>=6.0.3",
+    "scipy>=1.18.1",
 ]
 
 [tool.ty.environment]

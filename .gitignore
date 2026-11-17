@@ -224,3 +224,5 @@ config.yaml
 data/store/
 .DS_Store
 .vscode/
+copernicus-dev/
+copernicus-prod/

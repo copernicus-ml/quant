@@ -1,38 +1,32 @@
 import logging
+from pathlib import Path
 
-from data import DataStore, DownloadType
-from feature import FEATURE_META_COLLECTION, FeatureBuilder, LabelGenerator
-from feature.selector import FeatureSelector
+import qlib
+from qlib.data import D
+
+# from data import DataStore
 
 logging.basicConfig(level=logging.INFO)
 
 
 def main():
-    # Load data
-    store = DataStore()
-    label_generator = LabelGenerator()
-    # store.download_data(type=DownloadType.stocks)
-    # store.download_data(type=DownloadType.features)
-    stock_df = store.load_stocks()
-    original_features_df = store.load_features()
+    # ========== Load data ==========
+    # store = DataStore()
+    # store.download_data()
+    # stock_df = store.load_stocks()
+    # store.stock_df_to_csv(stock_df)
 
-    # Process features
-    feature_builder = FeatureBuilder(
-        feature_df=original_features_df, columns=list(FEATURE_META_COLLECTION.keys())
+    # ========= Qlib validation ==========
+    qlib.init(
+        provider_uri=str(Path("./copernicus-dev/qlib_data_us").resolve()), region="us"
     )
-    feature_df = feature_builder.get_feature_df().set_index(["ts_code", "trade_date"])
-
-    # Compute labels
-    labels_df = label_generator.generate_labels(stock_df).set_index(
-        ["ts_code", "trade_date"]
+    result = D.features(
+        instruments=["AAPL"],
+        fields=["$open", "$close", "$volume", "$vwap", "$factor"],
+        start_time="2020-01-02",
+        freq="day",
     )
-    # add label to the feature dataframe
-    store.save_labels(labels_df.reset_index())
-    feature_df = feature_df.join(labels_df, on=["ts_code", "trade_date"]).reset_index()
-
-    # feature selector
-    selector = FeatureSelector()
-    _ = selector.ic_ir(feature_df)
+    print(result.head())
 
 
 if __name__ == "__main__":

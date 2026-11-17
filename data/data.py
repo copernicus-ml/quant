@@ -3,7 +3,6 @@ import os
 import shutil
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from enum import Enum
 from pathlib import Path
 
 import pandas as pd
@@ -15,18 +14,12 @@ from config import get_config
 INDEX_DIR = "index"
 STOCK_DIR = "stock"
 META_DIR = "meta"
-FEATURE_DIR = "feature"
 
 STOCK_LIST_FILENAME_PREFIX = "stock_list"
 
 MAX_WORKERS = 8
 
 logger = logging.getLogger(__name__)
-
-
-class DownloadType(str, Enum):
-    stocks = "stock"
-    features = "features"
 
 
 class DataStore:
@@ -53,11 +46,10 @@ class DataStore:
         self._ensure_local_dirs()
         self._r2_stock_list_path = f"{self.bucket_name}/{META_DIR}/{self.stock_list_filename}_{config.runtime_env}.csv"
         self._r2_stocks_path = f"{self.bucket_name}/{STOCK_DIR}"
-        self._r2_features_path = f"{self.bucket_name}/{FEATURE_DIR}"
         self._local_stock_list_path = f"./{self._r2_stock_list_path}"
         self._local_stocks_path = f"./{self._r2_stocks_path}"
-        self._local_features_path = f"./{self._r2_features_path}"
         self._local_labels_path = f"./{self.bucket_name}/labels.csv"
+        self._local_qlib_csv_path = f"./{self.bucket_name}/qlib_csv"
 
     def get_stock_list(self) -> pd.DataFrame:
         stock_list_path = Path(self._local_stock_list_path)
@@ -71,22 +63,18 @@ class DataStore:
         df = pd.read_csv(stock_list_path)
         return df
 
-    def download_data(self, type: DownloadType = DownloadType.stocks):
+    def download_stock_data(self):
         stock_list_df = self.get_stock_list()
         stocks = stock_list_df["ts_code"].to_list()
         # concurrent download data
         completed = 0
         counter_lock = threading.Lock()
-        download_fn = (
-            self._download_stock
-            if type == DownloadType.stocks
-            else self._download_feature
-        )
         with ThreadPoolExecutor(
             max_workers=MAX_WORKERS, thread_name_prefix="download_stock"
         ) as executor:
             futures = {
-                executor.submit(download_fn, ticker): ticker for ticker in stocks
+                executor.submit(self._download_stock, ticker): ticker
+                for ticker in stocks
             }
             for future in as_completed(futures):
                 ticker = futures[future]
@@ -114,33 +102,6 @@ class DataStore:
         ):
             shutil.copyfileobj(source, target)
 
-    def _download_feature(self, ticker: str):
-        remote_file = f"{self._r2_features_path}/{ticker}.parquet"
-        local_path = f"{self._local_features_path}/{ticker}.parquet"
-        with (
-            self.fs.open_input_file(remote_file) as source,
-            open(local_path, "wb") as target,
-        ):
-            shutil.copyfileobj(source, target)
-
-    # def load_single_stock(
-    #     self, ts_code: str, filters: list[tuple] | None = None
-    # ) -> pd.DataFrame:
-    #     stock_path = f"{self._local_stocks_path}/{ts_code}.parquet"
-    #     table = pq.read_table(stock_path, filters=filters)
-    #     df = table.to_pandas()
-    #     df = df.set_index("trade_date")
-    #     return df
-
-    # def load_single_feature(
-    #     self, ts_code: str, filters: list[tuple] | None = None
-    # ) -> pd.DataFrame:
-    #     stock_path = f"{self._local_features_path}/{ts_code}.parquet"
-    #     table = pq.read_table(stock_path, filters=filters)
-    #     df = table.to_pandas()
-    #     df = df.set_index("trade_date")
-    #     return df
-
     def load_stocks(self) -> pd.DataFrame:
         """
         should not include index when loading stocks, because we might need to
@@ -148,24 +109,55 @@ class DataStore:
         """
         dataset = pq.ParquetDataset(self._local_stocks_path)
         table = dataset.read()
-        df = table.to_pandas()
-        df = df.sort_values(["ts_code", "trade_date"])
+        original_df = table.to_pandas()
+        original_df["trade_date"] = pd.to_datetime(
+            original_df["trade_date"], format="%Y%m%d"
+        ).dt.strftime("%Y-%m-%d")
+        # this is a temp glue to convert current data format to
+        # qlib compatible version.
+        # in the next phase, we need to use the qlib version for the whole project
+        df = pd.DataFrame()
+        df[
+            [
+                "date",
+                "symbol",
+                "open",
+                "close",
+                "high",
+                "low",
+                "vwap",
+                "volume",
+                "factor",
+            ]
+        ] = original_df[
+            [
+                "trade_date",
+                "ts_code",
+                "adj_open",
+                "adj_close",
+                "adj_high",
+                "adj_low",
+                "adj_vwap",
+                "adj_vol",
+                "cum_adjfactor",
+            ]
+        ]
+        df = df.sort_values(["symbol", "date"])
+        if df.duplicated(["symbol", "date"]).any():
+            raise ValueError("Duplicated date detected")
         return df
 
-    def load_features(self) -> pd.DataFrame:
-        """
-        should not include index when loading features, because we might need to
-        set different level of index in feature-building and label generation
-        """
-        dataset = pq.ParquetDataset(self._local_features_path)
-        table = dataset.read()
-        df = table.to_pandas()
-        return df
+    def stock_df_to_csv(self, df: pd.DataFrame):
+        df = df.reset_index()
+        csv_dir = Path(self._local_qlib_csv_path)
+        csv_dir.mkdir(parents=True, exist_ok=True)
+        for symbol, group in df.groupby("symbol"):
+            group.to_csv(f"{csv_dir}/{symbol}.csv", index=False, date_format="%Y-%m-%d")
 
     def save_labels(self, df: pd.DataFrame):
         Path(self._local_labels_path).parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(self._local_labels_path, index=False)
 
     def _ensure_local_dirs(self):
-        for folder in [INDEX_DIR, STOCK_DIR, META_DIR, FEATURE_DIR]:
+        for folder in [INDEX_DIR, STOCK_DIR, META_DIR]:
             os.makedirs(f"./{self.bucket_name}/{folder}", exist_ok=True)

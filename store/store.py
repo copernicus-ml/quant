@@ -109,39 +109,7 @@ class DataStore:
         """
         dataset = pq.ParquetDataset(self._local_stocks_path)
         table = dataset.read()
-        original_df = table.to_pandas()
-        original_df["trade_date"] = pd.to_datetime(
-            original_df["trade_date"], format="%Y%m%d"
-        ).dt.strftime("%Y-%m-%d")
-        # this is a temp glue to convert current data format to
-        # qlib compatible version.
-        # in the next phase, we need to use the qlib version for the whole project
-        df = pd.DataFrame()
-        df[
-            [
-                "date",
-                "symbol",
-                "open",
-                "close",
-                "high",
-                "low",
-                "vwap",
-                "volume",
-                "factor",
-            ]
-        ] = original_df[
-            [
-                "trade_date",
-                "ts_code",
-                "adj_open",
-                "adj_close",
-                "adj_high",
-                "adj_low",
-                "adj_vwap",
-                "adj_vol",
-                "cum_adjfactor",
-            ]
-        ]
+        df = table.to_pandas()
         df = df.sort_values(["symbol", "date"])
         if df.duplicated(["symbol", "date"]).any():
             raise ValueError("Duplicated date detected")

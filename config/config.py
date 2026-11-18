@@ -9,16 +9,12 @@ load_dotenv()
 CONFIG_FILE_PATH = "config.yaml"
 
 
-class StoreConfig(BaseModel):
+class Configs(BaseModel):
     access_key_id: str
     secret_access_key: str
     bucket_name: str
     bucket_endpoint: str
     runtime_env: str
-
-
-class Configs(BaseModel):
-    store: StoreConfig
 
 
 config: Configs | None = None

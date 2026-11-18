@@ -71,7 +71,7 @@ class DumpDataBase:
         self,
         data_path: str,
         qlib_dir: str,
-        backup_dir: str = None,
+        backup_dir: str | None = None,
         freq: str = "day",
         max_workers: int = 16,
         date_field_name: str = "date",
@@ -79,7 +79,7 @@ class DumpDataBase:
         symbol_field_name: str = "symbol",
         exclude_fields: str = "",
         include_fields: str = "",
-        limit_nums: int = None,
+        limit_nums: int | None = None,
     ):
         """
 

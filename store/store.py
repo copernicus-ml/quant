@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 class DataStore:
     def __init__(self):
-        config = get_config().store
+        config = get_config()
         # Setup R2 connection and filenames
         endpoint = config.bucket_endpoint.replace("https://", "").replace("http://", "")
         self.fs = fs.S3FileSystem(

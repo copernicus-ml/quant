@@ -33,6 +33,16 @@ class ConfigTracking:
 class ConfigSegments:
     train: tuple[str, str]
     valid: tuple[str, str]
+    test: tuple[str, str]
+
+    def __getitem__(self, key: str):
+        if key == "train":
+            return self.train
+        if key == "valid":
+            return self.valid
+        if key == "test":
+            return self.test
+        raise KeyError(f"invalid key: {key}")
 
 
 @dataclass

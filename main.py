@@ -1,15 +1,15 @@
 import logging
 
-from config import get_configs
-from data.provider import calendar, initialize
+from data import build_feature_spec, initialize
+from data.dataset import build_train_dataset
 
 logging.basicConfig(level=logging.INFO)
 
 
 def main():
-    configs = get_configs()
-    initialize(configs)
-    print(calendar(configs))
+    initialize()
+    ds = build_train_dataset()
+    print(ds)
 
 
 if __name__ == "__main__":
